@@ -9,14 +9,19 @@
 {-# LANGUAGE TypeFamilies        #-}
 module Spec.Contract.Tx.Constraints.MustUseOutputAsCollateral(tests) where
 
-import Control.Lens ((&), (??), (^.))
+import Control.Lens (At (at), (&), (??), (^.), (^..))
 import Control.Monad (void)
 import Test.Tasty (TestTree, testGroup)
 
-import Ledger qualified
+import Control.Lens.Combinators (non)
+import Data.Map as M
+import Data.Set as S (Set, elemAt, toList)
+import Data.Text qualified as Text
+import Ledger qualified as L
 import Ledger qualified as PSU
 import Ledger.Ada qualified as Ada
 import Ledger.Constraints qualified as Constraints
+import Ledger.Constraints.OffChain qualified as OffCon
 import Ledger.Constraints.OnChain.V1 qualified as Constraints
 import Ledger.Constraints.OnChain.V2 qualified as V2.Constraints
 import Ledger.Generators (someTokenValue)
@@ -25,20 +30,25 @@ import Ledger.Test (asDatum, asRedeemer, someValidator, someValidatorHash)
 import Ledger.Tx qualified as Tx
 import Ledger.Tx.Constraints qualified as Tx.Constraints
 import Ledger.Typed.Scripts qualified as Scripts
+import Plutus.ChainIndex.Emulator (diskState, unCredentialMap)
+import Plutus.ChainIndex.Emulator.DiskState (addressMap)
 import Plutus.Contract as Con
 import Plutus.Contract.Test (assertContractError, assertFailedTransaction, assertValidatedTransactionCount,
-                             changeInitialWalletValue, checkPredicateOptions, defaultCheckOptions, emulatorConfig, w1)
+                             changeInitialWalletValue, checkPredicateOptions, defaultCheckOptions, emulatorConfig,
+                             mockWalletPaymentPubKeyHash, tx, w1, (.&&.))
 import Plutus.Script.Utils.V1.Generators (alwaysSucceedValidatorHash)
 import Plutus.Script.Utils.V1.Scripts qualified as PSU.V1
 import Plutus.Script.Utils.V2.Scripts qualified as PSU.V2
 import Plutus.Script.Utils.V2.Typed.Scripts qualified as V2.Scripts
 import Plutus.Trace qualified as Trace
+import Plutus.V1.Ledger.Api (Address (addressCredential))
 import Plutus.V1.Ledger.Value qualified as Value
 import PlutusTx qualified
 import PlutusTx.Prelude qualified as P
 import Wallet (WalletAPIError (InsufficientFunds))
+import Wallet.Emulator.Wallet as Wallet (WalletState, chainIndexEmulatorState, ownAddress, signPrivateKeys,
+                                         walletToMockWallet')
 
--- Constraint's functions should soon be changed to use Address instead of PaymentPubKeyHash and StakeKeyHash
 tests :: TestTree
 tests =
     testGroup "MustUseOutputAsCollateral"
@@ -60,27 +70,31 @@ v2Tests sub = testGroup "Plutus V2" $
 
 v1FeaturesTests :: SubmitTx -> PSU.Language -> TestTree
 v1FeaturesTests sub t = testGroup "Plutus V1 features" $
-    [ --singleUseOfMustUseOutputAsCollateralToSatisfyAllCollateral
-    --, multipleUseOfMustUseOutputAsCollateralWithMultipleCollateralToSatisfyAllCollateral
-    --  multipleUseOfMustUseOutputAsCollateralWithMultipleCollateralToProvideMoreCollateralInputsThanNeeded -- providing more collateral than needed
-    --, contractErrorWhenMustUseOutputAsCollateralProvidesLessThanRequired
+    [ singleUseOfMustUseOutputAsCollateral
+    , multipleUseOfMustUseOutputAsCollateral
+    , noUseOfMustUseOutputAsCollateral
+    , useOfMustUseOutputAsCollateralWithoutPlutusScript
+    , contractErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs
+    --, contractErrorWhenMustUseOutputAsCollateralProvidesOtherWalletUtxo
+    --, contractErrorWhenMustUseOutputAsCollateralProvidesScriptUtxo
+    --, contractErrorWhenMustUseOutputAsCollateralProvidesLessThanRequired -- or balancer adds extra?
     -- (phase2 error can never occur)
     ] ?? sub ?? t
 
-v2FeaturesTests :: SubmitTx -> PSU.Language -> TestTree
-v2FeaturesTests sub t = testGroup "Plutus V2 features" $
-    [ successfulUseOfMustPayToOtherScriptWithInlineDatumWithMintedTokenV2
-    ] ?? sub ?? t
+-- v2FeaturesTests :: SubmitTx -> PSU.Language -> TestTree
+-- v2FeaturesTests sub t = testGroup "Plutus V2 features" $
+--     [ successfulUseOfMustUseOutputAsCollateralWithInlineDatumWithMintedTokenV2
+--     ] ?? sub ?? t
 
-v2FeaturesNotAvailableTests :: SubmitTx -> PSU.Language -> TestTree
-v2FeaturesNotAvailableTests sub t = testGroup "Plutus V2 features" $
-    [ phase1FailureWhenPayToOtherScriptV1ScriptUseInlineDatum
-    ] ?? sub ?? t
+-- v2FeaturesNotAvailableTests :: SubmitTx -> PSU.Language -> TestTree
+-- v2FeaturesNotAvailableTests sub t = testGroup "Plutus V2 features" $
+--     [ phase1FailureWhenPayToOtherScriptV1ScriptUseInlineDatum
+--     ] ?? sub ?? t
 
-someDatum :: Ledger.Datum
+someDatum :: L.Datum
 someDatum = asDatum @P.BuiltinByteString "datum"
 
-otherDatum :: Ledger.Datum
+otherDatum :: L.Datum
 otherDatum = asDatum @P.BuiltinByteString "other datum"
 
 utxoValue :: Value.Value
@@ -96,7 +110,7 @@ adaValue :: Value.Value
 adaValue = Ada.lovelaceValueOf adaAmount
 
 tknValueOf :: Integer -> PSU.Language -> Value.Value
-tknValueOf x tc = Value.singleton (mustPayToOtherScriptPolicyCurrencySymbol tc) "mint-me" x
+tknValueOf x tc = Value.singleton (mustUseOutputAsCollateralPolicyCurrencySymbol tc) "mint-me" x
 
 tknValue :: PSU.Language -> Value.Value
 tknValue = tknValueOf tknAmount
@@ -107,353 +121,168 @@ adaAndTokenValue = (adaValue <>) . tknValue
 otherTokenValue :: Value.Value
 otherTokenValue = someTokenValue "someToken" 10
 
+w1PaymentPubKeyHash :: L.PaymentPubKeyHash
+w1PaymentPubKeyHash = mockWalletPaymentPubKeyHash w1
+
+maximumCollateralInputs :: Integer
+maximumCollateralInputs = 3
+
 trace :: Contract () Empty ContractError () -> Trace.EmulatorTrace ()
 trace contract = do
     void $ Trace.activateContractWallet w1 contract
     void Trace.nextSlot
 
--- | Contract to a single transaction with mustSpendScriptOutputs offchain
--- constraint and mint with policy using matching onchain constraint.
-mustPayToOtherScriptWithDatumInTxContract
-    :: SubmitTx
-    -> PSU.Language
-    -> Value.Value
-    -> Ledger.Redeemer
-    -> Contract () Empty ContractError ()
-mustPayToOtherScriptWithDatumInTxContract submitTxFromConstraints lc offChainValue onChainConstraint = do
-    let lookups1 = mintingPolicy lc $ mustPayToOtherScriptPolicy lc
-        tx1 =
-            Constraints.mustPayToOtherScriptWithDatumInTx
-                someValidatorHash
-                someDatum
-                offChainValue
-           <> Constraints.mustMintValueWithRedeemer onChainConstraint (tknValue lc)
+-- | Contract with a single transaction using mustUseOutputAsCollateral offchain constraint and
+-- mint with policy using matching onchain constraint.
+mustUseOutputAsCollateralContract :: SubmitTx -> PSU.Language -> Integer ->
+                                     L.PaymentPubKeyHash -> Contract () Empty ContractError ()
+mustUseOutputAsCollateralContract submitTxFromConstraints lc numberOfCollateralInputs pkh = do
+    pubKeyUtxos <- utxosAt $ L.pubKeyHashAddress pkh Nothing
+    let collaterealUtxos = M.keys $ M.take (fromIntegral numberOfCollateralInputs) pubKeyUtxos
+        lookups1 = Constraints.unspentOutputs pubKeyUtxos
+                <> mintingPolicy lc (mustUseOutputAsCollateralPolicy lc)
+        tx1 = mconcat (mustUseOutputsAsCollateral collaterealUtxos)
+           <> Constraints.mustMintValueWithRedeemer (asRedeemer collaterealUtxos) (tknValue lc)
     ledgerTx1 <- submitTxFromConstraints lookups1 tx1
     awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
+    where
+        mustUseOutputsAsCollateral utxos = Constraints.mustUseOutputAsCollateral <$> utxos
 
--- | Valid scenario using offchain and onchain constraint
--- 'mustPayToOtherScriptWithDatumInTx' with exact token value being minted.
-successfulUseOfMustPayToOtherScriptWithDatumInTxWithMintedToken :: SubmitTx -> PSU.Language -> TestTree
-successfulUseOfMustPayToOtherScriptWithDatumInTxWithMintedToken submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithDatumInTx
-                someValidatorHash
-                someDatum
-                (adaAndTokenValue lc)
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                (adaAndTokenValue lc)
-                onChainConstraint
+txoRefsFromWalletState :: WalletState -> Set Tx.TxOutRef
+txoRefsFromWalletState w = let
+  pkCred = addressCredential $ Wallet.ownAddress w
+  in w ^. chainIndexEmulatorState . diskState . addressMap . unCredentialMap . at pkCred . non mempty
+
+-- | Valid scenario using offchain and onchain constraint mustUseOutputAsCollateral to select
+-- a specific utxo to use as collateral input
+singleUseOfMustUseOutputAsCollateral :: SubmitTx -> PSU.Language -> TestTree
+singleUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
+    let contract = mustUseOutputAsCollateralContract submitTxFromConstraints lc 1 w1PaymentPubKeyHash
+    in checkPredicateOptions defaultCheckOptions
+      ("Successful use of offchain and onchain mustUseOutputAsCollateral for a single " ++
+       "collateral input")
+      (assertValidatedTransactionCount 1 .&&.
+        (tx contract
+        (Trace.walletInstanceTag w1)
+        (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx) ==  1)
+        "correct number of collateral inputs"))
+      (void $ trace contract)
+
+-- | Valid scenario using offchain and onchain constraint mustUseOutputAsCollateral to select
+-- multiple utxos to use as collateral input
+multipleUseOfMustUseOutputAsCollateral :: SubmitTx -> PSU.Language -> TestTree
+multipleUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
+    let contract = mustUseOutputAsCollateralContract submitTxFromConstraints
+                  lc maximumCollateralInputs w1PaymentPubKeyHash
+    in checkPredicateOptions defaultCheckOptions
+      ("Successful use of offchain and onchain mustUseOutputAsCollateral for the maximum " ++
+       "number of allowed collateral inputs")
+      (assertValidatedTransactionCount 1 .&&.
+        (tx contract
+        (Trace.walletInstanceTag w1)
+        (\unT ->
+          length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
+            ==  fromIntegral maximumCollateralInputs)
+        "correct number of collateral inputs"))
+      (void $ trace contract)
+
+-- | Valid scenario where collateral input is included by default when offchain constraint
+-- mustUseOutputAsCollateral is not used
+noUseOfMustUseOutputAsCollateral :: SubmitTx -> PSU.Language -> TestTree
+noUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
+    let contract = mustUseOutputAsCollateralContract submitTxFromConstraints lc
+                    0 w1PaymentPubKeyHash
 
     in checkPredicateOptions defaultCheckOptions
-    "Successful use of offchain and onchain mustPayToOtherScriptWithDatumInTx constraint with wallet's exact ada balance"
-    (assertValidatedTransactionCount 1)
-    (void $ trace contract)
+      ("No use of offchain mustUseOutputAsCollateral still includes collateral input")
+      (assertValidatedTransactionCount 1 .&&.
+        (tx contract
+        (Trace.walletInstanceTag w1)
+        (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx) ==  1)
+        "correct number of collateral inputs"))
+      (void $ trace contract)
 
--- | Contract to a single transaction with mustSpendScriptOutputs offchain constraint and mint with policy using
--- matching onchain constraint, using Plutus V2 script and inline datum
-mustPayToOtherScriptWithInlineDatumContractV2
-    :: SubmitTx
-    -> PSU.Language
-    -> Value.Value
-    -> Redeemer
-    -> Contract () Empty ContractError ()
-mustPayToOtherScriptWithInlineDatumContractV2 submitTxFromConstraints lc offChainValue onChainConstraint = do
-    let lookups1 = mintingPolicy lc $ mustPayToOtherScriptPolicy lc
-        tx1 =
-            Constraints.mustPayToOtherScriptWithInlineDatum
-                someValidatorHash
-                someDatum
-                offChainValue
-           <> Constraints.mustMintValueWithRedeemer onChainConstraint (tknValue lc)
-    ledgerTx1 <- submitTxFromConstraints lookups1 tx1
-    awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
-
--- | Valid scenario using offchain and onchain constraint mustPayToOtherScript with exact token value being minted
--- using inline datum.
-successfulUseOfMustPayToOtherScriptWithInlineDatumWithMintedTokenV2
-    :: SubmitTx
-    -> PSU.Language
-    -> TestTree
-successfulUseOfMustPayToOtherScriptWithInlineDatumWithMintedTokenV2 submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithInlineDatum
-                someValidatorHash
-                someDatum
-                (adaAndTokenValue lc)
-        contract =
-            mustPayToOtherScriptWithInlineDatumContractV2
-                submitTxFromConstraints
-                lc
-                (adaAndTokenValue lc)
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Successful use of offchain and onchain mustPayToOtherScriptWithInlineDatum constraint with wallet's exact ada balance with inline datum"
-    (assertValidatedTransactionCount 1)
-    (void $ trace contract)
-
--- | Valid scenario using mustPayToOtherScript offchain constraint to include ada and token whilst onchain constraint checks for token value only
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOffchainIncludesTokenAndOnchainChecksOnlyToken
-    :: SubmitTx
-    -> PSU.Language
-    -> TestTree
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOffchainIncludesTokenAndOnchainChecksOnlyToken
-        submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithDatumInTx someValidatorHash someDatum (tknValue lc)
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                (adaAndTokenValue lc)
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Successful use of mustPayToOtherScript offchain constraint to include ada and token whilst onchain constraint checks for token value only"
-    (assertValidatedTransactionCount 1)
-    (void $ trace contract)
-
--- | Valid scenario using mustPayToOtherScript offchain constraint to include ada and token whilst onchain constraint checks for ada value only
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOffchainIncludesTokenAndOnchainChecksOnlyAda
-    :: SubmitTx
-    -> PSU.Language
-    -> TestTree
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOffchainIncludesTokenAndOnchainChecksOnlyAda
-        submitTxFromConstraints lc =
-    let onChainConstraint = asRedeemer $ MustPayToOtherScriptWithDatumInTx someValidatorHash someDatum adaValue
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                (adaAndTokenValue lc)
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Successful use of mustPayToOtherScriptWithDatumInTx offchain constraint to include ada and token whilst onchain constraint checks for ada value only"
-    (assertValidatedTransactionCount 1)
-    (void $ trace contract)
-
--- | Valid scenario using offchain and onchain constraint mustPayToOtherScript
--- in combination with mustSpendScriptOutputWithMatchingDatumAndValue to spend
--- script's exact token balance.
-successfulUseOfMustPayToOtherScriptWithDatumInTxWithScriptsExactTokenBalance
-    :: SubmitTx
-    -> PSU.Language
-    -> TestTree
-successfulUseOfMustPayToOtherScriptWithDatumInTxWithScriptsExactTokenBalance submitTxFromConstraints lc =
-    let otherValidatorHash = alwaysSucceedValidatorHash
-        adaAndOtherTokenValue = adaValue <> otherTokenValue
-        onChainConstraint = asRedeemer $ MustPayToOtherScriptWithDatumInTx someValidatorHash someDatum otherTokenValue
-        options = defaultCheckOptions & changeInitialWalletValue w1 (otherTokenValue <>)
-        contract = do
-            let lookups1 = Constraints.plutusV1OtherScript someValidator
-                tx1 =
-                    Constraints.mustPayToOtherScriptWithDatumInTx
-                        someValidatorHash
-                        someDatum
-                        adaAndOtherTokenValue
+-- | Valid scenario where offchain constraints mustUseOutputAsCollateral is used when there
+-- are no plutus scripts in the tx. Collateral input is still included in tx
+useOfMustUseOutputAsCollateralWithoutPlutusScript :: SubmitTx -> PSU.Language -> TestTree
+useOfMustUseOutputAsCollateralWithoutPlutusScript submitTxFromConstraints _ =
+    let contract = do
+            ownPkh <- ownPaymentPubKeyHash
+            pubKeyUtxos <- utxosAt $ L.pubKeyHashAddress ownPkh Nothing
+            let utxo = head $ (M.keys $ M.take 1 pubKeyUtxos)
+                lookups1 = Constraints.unspentOutputs pubKeyUtxos
+                tx1 = Constraints.mustUseOutputAsCollateral utxo
+                  <> Constraints.mustPayToPubKey ownPkh (Ada.adaValueOf 5)
             ledgerTx1 <- submitTxFromConstraints lookups1 tx1
             awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
 
-            scriptUtxos <- utxosAt $ Ledger.scriptHashAddress someValidatorHash
-            let lookups2 = Constraints.plutusV1OtherScript someValidator
-                        <> Constraints.unspentOutputs scriptUtxos
-                        <> mintingPolicy lc (mustPayToOtherScriptPolicy lc)
-                tx2 = Constraints.mustPayToOtherScriptWithDatumInTx
-                        otherValidatorHash
-                        someDatum
-                        adaAndOtherTokenValue
-                   <> Constraints.mustSpendScriptOutputWithMatchingDatumAndValue
-                        someValidatorHash
-                        (\d -> d == someDatum)
-                        (\v -> v == adaAndOtherTokenValue)
-                        (asRedeemer ())
-                   <> Constraints.mustMintValueWithRedeemer onChainConstraint (tknValue lc)
-            ledgerTx2 <- submitTxFromConstraints lookups2 tx2
-            awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx2
-    in checkPredicateOptions options
-    "Successful use of offchain and onchain mustPayToOtherScriptWithDatumInTx constraint in combination with mustSpendScriptOutputWithMatchingDatumAndValue to spend script's exact token balance"
-    (assertValidatedTransactionCount 2)
-    (void $ trace contract)
+    in checkPredicateOptions defaultCheckOptions
+      ("Use of offchain mustUseOutputAsCollateral when there are no plutus scripts in tx " ++
+      "still includes collateral input")
+      (assertValidatedTransactionCount 1 .&&.
+        (tx contract
+        (Trace.walletInstanceTag w1)
+        (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx) ==  1)
+        "correct number of collateral inputs"))
+      (void $ trace contract)
 
--- | Valid scenario where onchain mustPayToOtherScript constraint expects less ada than the actual value
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOnchainExpectsLowerAdaValue
+-- | Contract error scenario when offchain constraint mustUseOutputAsCollateral is used to exceed
+-- allowed maximum collatereal inputs (network protocol param)
+contractErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs
     :: SubmitTx
     -> PSU.Language
     -> TestTree
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOnchainExpectsLowerAdaValue
-        submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithDatumInTx
-                someValidatorHash
-                someDatum
-                (Ada.lovelaceValueOf $ adaAmount - 1)
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                adaValue
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Successful use of mustPayToOtherScriptWithDatumInTx onchain constraint when it expects less ada than the actual value"
-    (assertValidatedTransactionCount 1)
-    (void $ trace contract)
-
--- | Valid scenario where onchain mustPayToOtherScript constraint expects less token than the actual value
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOnchainExpectsLowerTokenValue
-    :: SubmitTx
-    -> PSU.Language
-    -> TestTree
-successfulUseOfMustPayToOtherScriptWithDatumInTxWhenOnchainExpectsLowerTokenValue
-        submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithDatumInTx
-                someValidatorHash
-                someDatum
-                (tknValueOf (tknAmount - 1) lc)
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                (adaAndTokenValue lc)
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Successful use of mustPayToOtherScriptWithDatumInTx onchain constraint when it expects less ada than the actual value"
-    (assertValidatedTransactionCount 1)
-    (void $ trace contract)
-
--- | Invalid contract that tries to use inline datum in a V1 script
-mustPayToOtherScriptWithInlineDatumContract
-    :: SubmitTx
-    -> PSU.Language
-    -> Value.Value
-    -> Redeemer
-    -> Contract () Empty ContractError ()
-mustPayToOtherScriptWithInlineDatumContract submitTxFromConstraints lc offChainValue onChainConstraint = do
-    let lookups1 = mintingPolicy lc $ mustPayToOtherScriptPolicy lc
-        tx1 =
-            Constraints.mustPayToOtherScriptWithInlineDatum
-                someValidatorHash
-                someDatum
-                offChainValue
-           <> Constraints.mustMintValueWithRedeemer onChainConstraint (tknValue lc)
-    ledgerTx1 <- submitTxFromConstraints lookups1 tx1
-    awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
-
--- | Contract error when ada amount to send to other script is greater than wallet balance
-contractErrorWhenAttemptingToSpendMoreThanAdaBalance :: SubmitTx -> PSU.Language -> TestTree
-contractErrorWhenAttemptingToSpendMoreThanAdaBalance submitTxFromConstraints lc =
-    let onChainConstraint = asRedeemer $ MustPayToOtherScriptWithDatumInTx someValidatorHash someDatum adaValue
-        walletAdaBalance = Value.scale 10 utxoValue -- with fees this exceeds wallet balance
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                walletAdaBalance
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Contract error when ada amount to send to other script is greater than wallet balance"
-    (assertContractError contract (Trace.walletInstanceTag w1) (\case WalletContractError (InsufficientFunds _) -> True; _ -> False) "failed to throw error")
-    (void $ trace contract)
-
--- | Contract error when token amount to send to other script is greater than wallet balance
-contractErrorWhenAttemptingToSpendMoreThanTokenBalance :: SubmitTx -> PSU.Language -> TestTree
-contractErrorWhenAttemptingToSpendMoreThanTokenBalance submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithDatumInTx someValidatorHash someDatum otherTokenValue
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                otherTokenValue
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Contract error when token amount to send to other script is greater than wallet balance"
-    (assertContractError contract (Trace.walletInstanceTag w1) (\case WalletContractError (InsufficientFunds _) -> True; _ -> False) "failed to throw error")
-    (void $ trace contract)
-
--- | Phase-1 failure when mustPayToOtherScript in a V1 script use inline datum
-phase1FailureWhenPayToOtherScriptV1ScriptUseInlineDatum :: SubmitTx -> PSU.Language -> TestTree
-phase1FailureWhenPayToOtherScriptV1ScriptUseInlineDatum submitTxFromConstraints lc =
-    let onChainConstraint = asRedeemer $ MustPayToOtherScriptWithInlineDatum someValidatorHash someDatum (adaAndTokenValue lc)
-        contract = mustPayToOtherScriptWithInlineDatumContract submitTxFromConstraints lc (adaAndTokenValue lc) onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Phase-1 failure when mustPayToOtherScript in a V1 script use inline datum"
-    (assertFailedTransaction (\_ err -> case err of {Ledger.CardanoLedgerValidationError _ -> True; _ -> False }))
-    (void $ trace contract)
-
-
-
--- | Phase-2 validation failure when onchain mustSpendScriptOutput constraint expects more than actual ada value
-phase2ErrorWhenExpectingMoreThanValue :: SubmitTx -> PSU.Language -> TestTree
-phase2ErrorWhenExpectingMoreThanValue submitTxFromConstraints lc =
-    let onChainConstraint =
-            asRedeemer
-            $ MustPayToOtherScriptWithDatumInTx someValidatorHash someDatum otherTokenValue
-        contract =
-            mustPayToOtherScriptWithDatumInTxContract
-                submitTxFromConstraints
-                lc
-                adaValue
-                onChainConstraint
-
-    in checkPredicateOptions defaultCheckOptions
-    "Phase-2 validation failure when when token amount sent to other script is lower than actual value"
-    (assertFailedTransaction (\_ err -> case err of {Ledger.ScriptFailure (EvaluationError ("La":_) _) -> True; _ -> False }))
-    (void $ trace contract)
-
+contractErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs submitTxFromConstraints lc =
+    let moreThanMaximumCollateralInputs = (succ maximumCollateralInputs)
+        contract = mustUseOutputAsCollateralContract submitTxFromConstraints lc
+                    moreThanMaximumCollateralInputs w1PaymentPubKeyHash
+      in checkPredicateOptions defaultCheckOptions
+      ("Ledger error when offchain mustUseOutputAsCollateralToSatisfyAllCollateral is used more " ++
+      "than maximum number of allowed collateral inputs")
+      (assertFailedTransaction
+        (\_ err ->
+          case err of {PSU.CardanoLedgerValidationError msg ->
+              Text.isInfixOf "TooManyCollateralInputs" msg; _ -> False  })
+        .&&.
+        tx contract
+          (Trace.walletInstanceTag w1)
+          (\unT ->
+            length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
+              ==  fromIntegral moreThanMaximumCollateralInputs)
+          "correct number of collateral inputs")
+      (void $ trace contract)
 
 data UnitTest
 instance Scripts.ValidatorTypes UnitTest
 
-mkMustPayToOtherScriptPolicy :: (Constraints.TxConstraints () () -> sc -> Bool) -> ConstraintParams -> sc -> Bool
-mkMustPayToOtherScriptPolicy checkScriptContext t = case t of
-    MustPayToOtherScriptWithDatumInTx vh d v ->
-        checkScriptContext (Constraints.mustPayToOtherScriptWithDatumInTx vh d v)
-    MustPayToOtherScriptAddressWithDatumInTx vh svh d v ->
-        checkScriptContext (Constraints.mustPayToOtherScriptAddressWithDatumInTx vh svh d v)
-    MustPayToOtherScriptWithInlineDatum vh d v ->
-        checkScriptContext (Constraints.mustPayToOtherScriptWithInlineDatum vh d v)
-    MustPayToOtherScriptAddressWithInlineDatum vh svh d v ->
-        checkScriptContext (Constraints.mustPayToOtherScriptAddressWithInlineDatum vh svh d v)
-
-mustPayToOtherScriptPolicyV1 :: Ledger.MintingPolicy
-mustPayToOtherScriptPolicyV1 = Ledger.mkMintingPolicyScript $$(PlutusTx.compile [||wrap||])
+mkMustUseOutputAsCollateralPolicy :: (Constraints.TxConstraints () () -> sc -> Bool) -> [Tx.TxOutRef] -> sc -> Bool
+mkMustUseOutputAsCollateralPolicy checkScriptContext txOutRefs = checkScriptContext (P.mconcat mustUseOutputsAsCollateral)
     where
-        checkedMkMustPayToOtherScriptPolicy = mkMustPayToOtherScriptPolicy Constraints.checkScriptContext
-        wrap = Scripts.mkUntypedMintingPolicy checkedMkMustPayToOtherScriptPolicy
+        mustUseOutputsAsCollateral = Constraints.mustUseOutputAsCollateral P.<$> txOutRefs
 
-mustPayToOtherScriptPolicyV2 :: Ledger.MintingPolicy
-mustPayToOtherScriptPolicyV2 = Ledger.mkMintingPolicyScript $$(PlutusTx.compile [||wrap||])
+mustUseOutputAsCollateralPolicyV1 :: L.MintingPolicy
+mustUseOutputAsCollateralPolicyV1 = L.mkMintingPolicyScript $$(PlutusTx.compile [||wrap||])
     where
-        checkedMkMustPayToOtherScriptPolicy = mkMustPayToOtherScriptPolicy V2.Constraints.checkScriptContext
-        wrap = V2.Scripts.mkUntypedMintingPolicy checkedMkMustPayToOtherScriptPolicy
+        checkedMkMustUseOutputAsCollateralPolicy = mkMustUseOutputAsCollateralPolicy Constraints.checkScriptContext
+        wrap = Scripts.mkUntypedMintingPolicy checkedMkMustUseOutputAsCollateralPolicy
 
-mustPayToOtherScriptPolicy :: PSU.Language -> Ledger.MintingPolicy
-mustPayToOtherScriptPolicy = \case
-  PSU.PlutusV1 -> mustPayToOtherScriptPolicyV1
-  PSU.PlutusV2 -> mustPayToOtherScriptPolicyV2
+mustUseOutputAsCollateralPolicyV2 :: L.MintingPolicy
+mustUseOutputAsCollateralPolicyV2 = L.mkMintingPolicyScript $$(PlutusTx.compile [||wrap||])
+    where
+        checkedMkMustUseOutputAsCollateralPolicy = mkMustUseOutputAsCollateralPolicy V2.Constraints.checkScriptContext
+        wrap = V2.Scripts.mkUntypedMintingPolicy checkedMkMustUseOutputAsCollateralPolicy
 
-mintingPolicy :: PSU.Language -> forall a. Ledger.MintingPolicy -> Constraints.ScriptLookups a
+mustUseOutputAsCollateralPolicy :: PSU.Language -> L.MintingPolicy
+mustUseOutputAsCollateralPolicy = \case
+  PSU.PlutusV1 -> mustUseOutputAsCollateralPolicyV1
+  PSU.PlutusV2 -> mustUseOutputAsCollateralPolicyV2
+
+mintingPolicy :: PSU.Language -> forall a. L.MintingPolicy -> Constraints.ScriptLookups a
 mintingPolicy = \case
   PSU.PlutusV1 -> Constraints.plutusV1MintingPolicy
   PSU.PlutusV2 -> Constraints.plutusV2MintingPolicy
 
-mintingPolicyHash :: PSU.Language -> Ledger.MintingPolicy -> Ledger.MintingPolicyHash
+mintingPolicyHash :: PSU.Language -> L.MintingPolicy -> L.MintingPolicyHash
 mintingPolicyHash = \case
   PSU.PlutusV1 -> PSU.V1.mintingPolicyHash
   PSU.PlutusV2 -> PSU.V2.mintingPolicyHash
@@ -471,29 +300,8 @@ cardanoSubmitTx lookups tx = let
 ledgerSubmitTx :: SubmitTx
 ledgerSubmitTx = submitTxConstraintsWith
 
+mustUseOutputAsCollateralPolicyHash :: PSU.Language -> L.MintingPolicyHash
+mustUseOutputAsCollateralPolicyHash lc = mintingPolicyHash lc $ mustUseOutputAsCollateralPolicy lc
 
-mustPayToOtherScriptPolicyHash :: PSU.Language -> Ledger.MintingPolicyHash
-mustPayToOtherScriptPolicyHash lc = mintingPolicyHash lc $ mustPayToOtherScriptPolicy lc
-
-mustPayToOtherScriptPolicyCurrencySymbol :: PSU.Language -> Ledger.CurrencySymbol
-mustPayToOtherScriptPolicyCurrencySymbol = Value.mpsSymbol . mustPayToOtherScriptPolicyHash
-
-data ConstraintParams =
-    MustPayToOtherScriptWithDatumInTx PSU.V1.ValidatorHash Ledger.Datum Value.Value
-  | MustPayToOtherScriptAddressWithDatumInTx
-        PSU.V1.ValidatorHash
-        Ledger.StakingCredential
-        Ledger.Datum
-        Value.Value
-  | MustPayToOtherScriptWithInlineDatum
-        PSU.V1.ValidatorHash
-        Ledger.Datum
-        Value.Value
-  | MustPayToOtherScriptAddressWithInlineDatum
-        PSU.V1.ValidatorHash
-        Ledger.StakingCredential
-        Ledger.Datum
-        Value.Value
-    deriving (Show)
-
-PlutusTx.unstableMakeIsData ''ConstraintParams
+mustUseOutputAsCollateralPolicyCurrencySymbol :: PSU.Language -> L.CurrencySymbol
+mustUseOutputAsCollateralPolicyCurrencySymbol = Value.mpsSymbol . mustUseOutputAsCollateralPolicyHash
