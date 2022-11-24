@@ -7,45 +7,46 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
+
+{-# OPTIONS_GHC -fno-warn-deprecations #-}
+
 module Spec.Contract.Tx.Constraints.MustUseOutputAsCollateral(tests) where
 
-import Control.Lens (At (at), (&), (??), (^.), (^..))
+import Control.Lens (At (at), (??), (^.))
 import Control.Monad (void)
 import Test.Tasty (TestTree, testGroup)
 
 import Control.Lens.Combinators (non)
 import Data.Map as M
-import Data.Set as S (Set, elemAt, toList)
-import Data.Text qualified as Text
+import Data.Set as S
 import Ledger qualified as L
 import Ledger qualified as PSU
 import Ledger.Ada qualified as Ada
-import Ledger.Constraints qualified as Constraints
+import Ledger.CardanoWallet (paymentPrivateKey)
+import Ledger.Constraints qualified as Cons
 import Ledger.Constraints.OffChain qualified as OffCon
-import Ledger.Constraints.OnChain.V1 qualified as Constraints
-import Ledger.Constraints.OnChain.V2 qualified as V2.Constraints
-import Ledger.Generators (someTokenValue)
-import Ledger.Scripts (Redeemer, ScriptError (EvaluationError))
-import Ledger.Test (asDatum, asRedeemer, someValidator, someValidatorHash)
+import Ledger.Constraints.OnChain.V1 qualified as Cons
+import Ledger.Constraints.OnChain.V2 qualified as V2.Cons
+import Ledger.Test (asRedeemer, someAddressV2, someTypedValidatorV2)
 import Ledger.Tx qualified as Tx
-import Ledger.Tx.Constraints qualified as Tx.Constraints
+import Ledger.Tx.Constraints qualified as Tx.Cons
 import Ledger.Typed.Scripts qualified as Scripts
 import Plutus.ChainIndex.Emulator (diskState, unCredentialMap)
 import Plutus.ChainIndex.Emulator.DiskState (addressMap)
 import Plutus.Contract as Con
-import Plutus.Contract.Test (assertContractError, assertFailedTransaction, assertValidatedTransactionCount,
-                             changeInitialWalletValue, checkPredicateOptions, defaultCheckOptions, emulatorConfig,
-                             mockWalletPaymentPubKeyHash, tx, w1, (.&&.))
-import Plutus.Script.Utils.V1.Generators (alwaysSucceedValidatorHash)
+import Plutus.Contract.Test (assertUnbalancedTx, assertValidatedTransactionCount,
+                             assertValidatedTransactionCountOfTotal, checkPredicateOptions, defaultCheckOptions,
+                             emulatorConfig, mockWalletPaymentPubKeyHash, w1, w2, (.&&.))
+import Plutus.Script.Utils.Typed (Any)
 import Plutus.Script.Utils.V1.Scripts qualified as PSU.V1
 import Plutus.Script.Utils.V2.Scripts qualified as PSU.V2
 import Plutus.Script.Utils.V2.Typed.Scripts qualified as V2.Scripts
-import Plutus.Trace qualified as Trace
+import Plutus.Trace.Emulator qualified as Trace (EmulatorTrace, activateContractWallet, nextSlot, params,
+                                                 setSigningProcess, walletInstanceTag)
 import Plutus.V1.Ledger.Api (Address (addressCredential))
 import Plutus.V1.Ledger.Value qualified as Value
 import PlutusTx qualified
 import PlutusTx.Prelude qualified as P
-import Wallet (WalletAPIError (InsufficientFunds))
 import Wallet.Emulator.Wallet as Wallet (WalletState, chainIndexEmulatorState, ownAddress, signPrivateKeys,
                                          walletToMockWallet')
 
@@ -72,42 +73,19 @@ v1FeaturesTests :: SubmitTx -> PSU.Language -> TestTree
 v1FeaturesTests sub t = testGroup "Plutus V1 features" $
     [ singleUseOfMustUseOutputAsCollateral
     , multipleUseOfMustUseOutputAsCollateral
-    , noUseOfMustUseOutputAsCollateral
+    , usingMustUseOutputAsCollateralWithOtherWalletUtxo
+    , usingMustUseOutputAsCollateralWithScriptUtxo
     , useOfMustUseOutputAsCollateralWithoutPlutusScript
-    , contractErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs
-    --, contractErrorWhenMustUseOutputAsCollateralProvidesOtherWalletUtxo
-    --, contractErrorWhenMustUseOutputAsCollateralProvidesScriptUtxo
-    --, contractErrorWhenMustUseOutputAsCollateralProvidesLessThanRequired -- or balancer adds extra?
-    -- (phase2 error can never occur)
+    , ledgerValidationErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs
+    -- (no phase2 tests because this error can never occur)
+    -- (no tests to check balanced tx for when balancer does/doesn't include collateral inputs)
     ] ?? sub ?? t
 
--- v2FeaturesTests :: SubmitTx -> PSU.Language -> TestTree
--- v2FeaturesTests sub t = testGroup "Plutus V2 features" $
---     [ successfulUseOfMustUseOutputAsCollateralWithInlineDatumWithMintedTokenV2
---     ] ?? sub ?? t
-
--- v2FeaturesNotAvailableTests :: SubmitTx -> PSU.Language -> TestTree
--- v2FeaturesNotAvailableTests sub t = testGroup "Plutus V2 features" $
---     [ phase1FailureWhenPayToOtherScriptV1ScriptUseInlineDatum
---     ] ?? sub ?? t
-
-someDatum :: L.Datum
-someDatum = asDatum @P.BuiltinByteString "datum"
-
-otherDatum :: L.Datum
-otherDatum = asDatum @P.BuiltinByteString "other datum"
-
 utxoValue :: Value.Value
-utxoValue = Ada.lovelaceValueOf 50_000_000
-
-adaAmount :: Integer
-adaAmount = 25_000_000
+utxoValue = Ada.lovelaceValueOf 10_000_000
 
 tknAmount :: Integer
 tknAmount = 5_000_000
-
-adaValue :: Value.Value
-adaValue = Ada.lovelaceValueOf adaAmount
 
 tknValueOf :: Integer -> PSU.Language -> Value.Value
 tknValueOf x tc = Value.singleton (mustUseOutputAsCollateralPolicyCurrencySymbol tc) "mint-me" x
@@ -115,14 +93,11 @@ tknValueOf x tc = Value.singleton (mustUseOutputAsCollateralPolicyCurrencySymbol
 tknValue :: PSU.Language -> Value.Value
 tknValue = tknValueOf tknAmount
 
-adaAndTokenValue :: PSU.Language -> Value.Value
-adaAndTokenValue = (adaValue <>) . tknValue
-
-otherTokenValue :: Value.Value
-otherTokenValue = someTokenValue "someToken" 10
-
 w1PaymentPubKeyHash :: L.PaymentPubKeyHash
 w1PaymentPubKeyHash = mockWalletPaymentPubKeyHash w1
+
+w2PaymentPubKeyHash :: L.PaymentPubKeyHash
+w2PaymentPubKeyHash = mockWalletPaymentPubKeyHash w2
 
 maximumCollateralInputs :: Integer
 maximumCollateralInputs = 3
@@ -139,14 +114,14 @@ mustUseOutputAsCollateralContract :: SubmitTx -> PSU.Language -> Integer ->
 mustUseOutputAsCollateralContract submitTxFromConstraints lc numberOfCollateralInputs pkh = do
     pubKeyUtxos <- utxosAt $ L.pubKeyHashAddress pkh Nothing
     let collaterealUtxos = M.keys $ M.take (fromIntegral numberOfCollateralInputs) pubKeyUtxos
-        lookups1 = Constraints.unspentOutputs pubKeyUtxos
+        lookups1 = Cons.unspentOutputs pubKeyUtxos
                 <> mintingPolicy lc (mustUseOutputAsCollateralPolicy lc)
         tx1 = mconcat (mustUseOutputsAsCollateral collaterealUtxos)
-           <> Constraints.mustMintValueWithRedeemer (asRedeemer collaterealUtxos) (tknValue lc)
+           <> Cons.mustMintValueWithRedeemer (asRedeemer collaterealUtxos) (tknValue lc)
     ledgerTx1 <- submitTxFromConstraints lookups1 tx1
     awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
     where
-        mustUseOutputsAsCollateral utxos = Constraints.mustUseOutputAsCollateral <$> utxos
+        mustUseOutputsAsCollateral utxos = Cons.mustUseOutputAsCollateral <$> utxos
 
 txoRefsFromWalletState :: WalletState -> Set Tx.TxOutRef
 txoRefsFromWalletState w = let
@@ -162,7 +137,7 @@ singleUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
       ("Successful use of offchain and onchain mustUseOutputAsCollateral for a single " ++
        "collateral input")
       (assertValidatedTransactionCount 1 .&&.
-        (tx contract
+        (assertUnbalancedTx contract
         (Trace.walletInstanceTag w1)
         (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx) ==  1)
         "correct number of collateral inputs"))
@@ -178,7 +153,7 @@ multipleUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
       ("Successful use of offchain and onchain mustUseOutputAsCollateral for the maximum " ++
        "number of allowed collateral inputs")
       (assertValidatedTransactionCount 1 .&&.
-        (tx contract
+        (assertUnbalancedTx contract
         (Trace.walletInstanceTag w1)
         (\unT ->
           length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
@@ -186,33 +161,83 @@ multipleUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
         "correct number of collateral inputs"))
       (void $ trace contract)
 
--- | Valid scenario where collateral input is included by default when offchain constraint
--- mustUseOutputAsCollateral is not used
-noUseOfMustUseOutputAsCollateral :: SubmitTx -> PSU.Language -> TestTree
-noUseOfMustUseOutputAsCollateral submitTxFromConstraints lc =
-    let contract = mustUseOutputAsCollateralContract submitTxFromConstraints lc
-                    0 w1PaymentPubKeyHash
+-- | Valid scenario when using offchain and onchain constraint mustUseOutputAsCollateral with other
+-- wallet's utxo
+usingMustUseOutputAsCollateralWithOtherWalletUtxo
+    :: SubmitTx
+    -> PSU.Language
+    -> TestTree
+usingMustUseOutputAsCollateralWithOtherWalletUtxo submitTxFromConstraints lc =
+    let numberOfCollateralInputs = 2
+        contract = mustUseOutputAsCollateralContract submitTxFromConstraints lc
+                    numberOfCollateralInputs w1PaymentPubKeyHash
+        traceWithW2Signing = do
+            Trace.setSigningProcess w1 (Just $ signPrivateKeys
+                [paymentPrivateKey $ walletToMockWallet' w1,
+                paymentPrivateKey $ walletToMockWallet' w2])
+            void $ Trace.activateContractWallet w1 contract
+            Trace.nextSlot
+    in checkPredicateOptions defaultCheckOptions
+    "Successful use of offchain and onchain mustUseOutputAsCollateral when using other wallet's utxo"
+    (assertValidatedTransactionCount 1 .&&.
+    (assertUnbalancedTx contract
+    (Trace.walletInstanceTag w1)
+    (\unT ->
+        length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
+        ==  fromIntegral numberOfCollateralInputs)
+    "correct number of collateral inputs"))
+    (void traceWithW2Signing)
+
+-- | Ledger validation error scenario when offchain constraint mustUseOutputAsCollateral is used
+-- with a script's utxo
+usingMustUseOutputAsCollateralWithScriptUtxo :: SubmitTx -> PSU.Language -> TestTree
+usingMustUseOutputAsCollateralWithScriptUtxo submitTxFromConstraints lc =
+    let numberOfCollateralInputs = 1
+        contract :: Contract () Empty ContractError ()
+        contract = do
+            let lookups1 = Cons.typedValidatorLookups someTypedValidatorV2
+                tx1 = Cons.mustPayToTheScriptWithDatumInTx (PlutusTx.toBuiltinData ()) utxoValue
+            ledgerTx1 <- submitTxFromConstraints lookups1 tx1
+            awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
+
+            ownPkh <- ownPaymentPubKeyHash
+            pubKeyUtxos <- utxosAt $ L.pubKeyHashAddress ownPkh Nothing
+            scriptUtxos <- utxosAt someAddressV2
+            let collaterealUtxo = head $ (M.keys $ M.take numberOfCollateralInputs scriptUtxos)
+                lookups2 = Cons.typedValidatorLookups someTypedValidatorV2
+                        <> Cons.unspentOutputs scriptUtxos
+                        <> Cons.unspentOutputs pubKeyUtxos
+                        <> mintingPolicy lc (mustUseOutputAsCollateralPolicy lc)
+                tx2 = Cons.mustUseOutputAsCollateral collaterealUtxo
+                   <> Cons.mustPayToPubKey ownPkh (Ada.adaValueOf 5)
+                   <> Cons.mustMintValueWithRedeemer (asRedeemer [collaterealUtxo]) (tknValue lc)
+            ledgerTx2 <- submitTxFromConstraints lookups2 tx2
+            awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx2
 
     in checkPredicateOptions defaultCheckOptions
-      ("No use of offchain mustUseOutputAsCollateral still includes collateral input")
-      (assertValidatedTransactionCount 1 .&&.
-        (tx contract
-        (Trace.walletInstanceTag w1)
-        (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx) ==  1)
-        "correct number of collateral inputs"))
-      (void $ trace contract)
+        ("Ledger error when offchain constraint mustUseOutputAsCollateralToSatisfyAllCollateral is " ++
+         "used with script's utxo (ScriptsNotPaidUTxO)")
+        (assertValidatedTransactionCountOfTotal 1 2 .&&.
+        assertUnbalancedTx contract
+            (Trace.walletInstanceTag w1)
+            (\unT ->
+                length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
+                    ==  numberOfCollateralInputs)
+                "correct number of collateral inputs")
+        (void $ trace contract)
 
 -- | Valid scenario where offchain constraints mustUseOutputAsCollateral is used when there
 -- are no plutus scripts in the tx. Collateral input is still included in tx
 useOfMustUseOutputAsCollateralWithoutPlutusScript :: SubmitTx -> PSU.Language -> TestTree
 useOfMustUseOutputAsCollateralWithoutPlutusScript submitTxFromConstraints _ =
-    let contract = do
+    let numberOfCollateralInputs = 1
+        contract = do
             ownPkh <- ownPaymentPubKeyHash
             pubKeyUtxos <- utxosAt $ L.pubKeyHashAddress ownPkh Nothing
-            let utxo = head $ (M.keys $ M.take 1 pubKeyUtxos)
-                lookups1 = Constraints.unspentOutputs pubKeyUtxos
-                tx1 = Constraints.mustUseOutputAsCollateral utxo
-                  <> Constraints.mustPayToPubKey ownPkh (Ada.adaValueOf 5)
+            let utxo = head $ (M.keys $ M.take numberOfCollateralInputs pubKeyUtxos)
+                lookups1 = Cons.unspentOutputs pubKeyUtxos
+                tx1 = Cons.mustUseOutputAsCollateral utxo
+                  <> Cons.mustPayToPubKey ownPkh (Ada.adaValueOf 5)
             ledgerTx1 <- submitTxFromConstraints lookups1 tx1
             awaitTxConfirmed $ Tx.getCardanoTxId ledgerTx1
 
@@ -220,56 +245,50 @@ useOfMustUseOutputAsCollateralWithoutPlutusScript submitTxFromConstraints _ =
       ("Use of offchain mustUseOutputAsCollateral when there are no plutus scripts in tx " ++
       "still includes collateral input")
       (assertValidatedTransactionCount 1 .&&.
-        (tx contract
+        (assertUnbalancedTx contract
         (Trace.walletInstanceTag w1)
-        (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx) ==  1)
+        (\unT -> length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
+            ==  numberOfCollateralInputs)
         "correct number of collateral inputs"))
       (void $ trace contract)
 
--- | Contract error scenario when offchain constraint mustUseOutputAsCollateral is used to exceed
--- allowed maximum collatereal inputs (network protocol param)
-contractErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs
+-- | Ledger validation error scenario when offchain constraint mustUseOutputAsCollateral is used
+-- to exceed allowed maximum collatereal inputs (network protocol param)
+ledgerValidationErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs
     :: SubmitTx
     -> PSU.Language
     -> TestTree
-contractErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs submitTxFromConstraints lc =
+ledgerValidationErrorWhenMustUseOutputAsCollateralExceedsMaximumCollateralInputs submitTxFromConstraints lc =
     let moreThanMaximumCollateralInputs = (succ maximumCollateralInputs)
         contract = mustUseOutputAsCollateralContract submitTxFromConstraints lc
                     moreThanMaximumCollateralInputs w1PaymentPubKeyHash
-      in checkPredicateOptions defaultCheckOptions
-      ("Ledger error when offchain mustUseOutputAsCollateralToSatisfyAllCollateral is used more " ++
-      "than maximum number of allowed collateral inputs")
-      (assertFailedTransaction
-        (\_ err ->
-          case err of {PSU.CardanoLedgerValidationError msg ->
-              Text.isInfixOf "TooManyCollateralInputs" msg; _ -> False  })
-        .&&.
-        tx contract
-          (Trace.walletInstanceTag w1)
-          (\unT ->
-            length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
-              ==  fromIntegral moreThanMaximumCollateralInputs)
-          "correct number of collateral inputs")
-      (void $ trace contract)
+    in checkPredicateOptions defaultCheckOptions
+    ("Ledger error when offchain mustUseOutputAsCollateralToSatisfyAllCollateral is used more " ++
+     "than maximum number of allowed collateral inputs (TooManyCollateralInputs)")
+    (assertValidatedTransactionCountOfTotal 0 1 .&&.
+        assertUnbalancedTx contract
+            (Trace.walletInstanceTag w1)
+            (\unT ->
+                length (Tx.getCardanoTxCollateralInputs $ Tx.EmulatorTx $ unT ^. OffCon.tx)
+                    ==  fromIntegral moreThanMaximumCollateralInputs)
+                "correct number of collateral inputs")
+    (void $ trace contract)
 
-data UnitTest
-instance Scripts.ValidatorTypes UnitTest
-
-mkMustUseOutputAsCollateralPolicy :: (Constraints.TxConstraints () () -> sc -> Bool) -> [Tx.TxOutRef] -> sc -> Bool
+mkMustUseOutputAsCollateralPolicy :: (Cons.TxConstraints () () -> sc -> Bool) -> [Tx.TxOutRef] -> sc -> Bool
 mkMustUseOutputAsCollateralPolicy checkScriptContext txOutRefs = checkScriptContext (P.mconcat mustUseOutputsAsCollateral)
     where
-        mustUseOutputsAsCollateral = Constraints.mustUseOutputAsCollateral P.<$> txOutRefs
+        mustUseOutputsAsCollateral = Cons.mustUseOutputAsCollateral P.<$> txOutRefs
 
 mustUseOutputAsCollateralPolicyV1 :: L.MintingPolicy
 mustUseOutputAsCollateralPolicyV1 = L.mkMintingPolicyScript $$(PlutusTx.compile [||wrap||])
     where
-        checkedMkMustUseOutputAsCollateralPolicy = mkMustUseOutputAsCollateralPolicy Constraints.checkScriptContext
+        checkedMkMustUseOutputAsCollateralPolicy = mkMustUseOutputAsCollateralPolicy Cons.checkScriptContext
         wrap = Scripts.mkUntypedMintingPolicy checkedMkMustUseOutputAsCollateralPolicy
 
 mustUseOutputAsCollateralPolicyV2 :: L.MintingPolicy
 mustUseOutputAsCollateralPolicyV2 = L.mkMintingPolicyScript $$(PlutusTx.compile [||wrap||])
     where
-        checkedMkMustUseOutputAsCollateralPolicy = mkMustUseOutputAsCollateralPolicy V2.Constraints.checkScriptContext
+        checkedMkMustUseOutputAsCollateralPolicy = mkMustUseOutputAsCollateralPolicy V2.Cons.checkScriptContext
         wrap = V2.Scripts.mkUntypedMintingPolicy checkedMkMustUseOutputAsCollateralPolicy
 
 mustUseOutputAsCollateralPolicy :: PSU.Language -> L.MintingPolicy
@@ -277,10 +296,10 @@ mustUseOutputAsCollateralPolicy = \case
   PSU.PlutusV1 -> mustUseOutputAsCollateralPolicyV1
   PSU.PlutusV2 -> mustUseOutputAsCollateralPolicyV2
 
-mintingPolicy :: PSU.Language -> forall a. L.MintingPolicy -> Constraints.ScriptLookups a
+mintingPolicy :: PSU.Language -> forall a. L.MintingPolicy -> Cons.ScriptLookups a
 mintingPolicy = \case
-  PSU.PlutusV1 -> Constraints.plutusV1MintingPolicy
-  PSU.PlutusV2 -> Constraints.plutusV2MintingPolicy
+  PSU.PlutusV1 -> Cons.plutusV1MintingPolicy
+  PSU.PlutusV2 -> Cons.plutusV2MintingPolicy
 
 mintingPolicyHash :: PSU.Language -> L.MintingPolicy -> L.MintingPolicyHash
 mintingPolicyHash = \case
@@ -288,14 +307,14 @@ mintingPolicyHash = \case
   PSU.PlutusV2 -> PSU.V2.mintingPolicyHash
 
 type SubmitTx
-  =  Constraints.ScriptLookups UnitTest
-  -> Constraints.TxConstraints (Scripts.RedeemerType UnitTest) (Scripts.DatumType UnitTest)
+  =  Cons.ScriptLookups Any
+  -> Cons.TxConstraints (Scripts.RedeemerType Any) (Scripts.DatumType Any)
   -> Contract () Empty ContractError Tx.CardanoTx
 
 cardanoSubmitTx :: SubmitTx
 cardanoSubmitTx lookups tx = let
   p = defaultCheckOptions ^. emulatorConfig . Trace.params
-  in submitUnbalancedTx $ either (error . show) id $ Tx.Constraints.mkTx @UnitTest p lookups tx
+  in submitUnbalancedTx $ either (error . show) id $ Tx.Cons.mkTx @Any p lookups tx
 
 ledgerSubmitTx :: SubmitTx
 ledgerSubmitTx = submitTxConstraintsWith
