@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: nixbuild/nix-quick-install-action@v22
         with:
+          # 2.14.1 seems to have issues, see https://github.com/nixbuild/nix-quick-install-action/issues/29
+          nix_version: '2.13.3'
           nix_conf: |
             experimental-features = nix-command flakes
             accept-flake-config = true
@@ -24,6 +26,7 @@ jobs:
           nix build .#read-the-docs-site --out-link result
           mkdir dist
           cp -RL ./result/haddock/* ./dist/
+          chmod 777 ./dist
       - uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
