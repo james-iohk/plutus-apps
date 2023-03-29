@@ -1074,22 +1074,22 @@ data ChainIndexQueryEffect r
 
 -- | Get the tip of the chain index
 [GetTip] :: ChainIndexQueryEffect Tip
-datumFromHash :: forall effs_a2x4l. Member ChainIndexQueryEffect effs_a2x4l => DatumHash -> Eff effs_a2x4l (Maybe Datum)
-validatorFromHash :: forall effs_a2x4m. Member ChainIndexQueryEffect effs_a2x4m => ValidatorHash -> Eff effs_a2x4m (Maybe (Versioned Validator))
-mintingPolicyFromHash :: forall effs_a2x4n. Member ChainIndexQueryEffect effs_a2x4n => MintingPolicyHash -> Eff effs_a2x4n (Maybe (Versioned MintingPolicy))
-stakeValidatorFromHash :: forall effs_a2x4p. Member ChainIndexQueryEffect effs_a2x4p => StakeValidatorHash -> Eff effs_a2x4p (Maybe (Versioned StakeValidator))
-redeemerFromHash :: forall effs_a2x4o. Member ChainIndexQueryEffect effs_a2x4o => RedeemerHash -> Eff effs_a2x4o (Maybe Redeemer)
-txOutFromRef :: forall effs_a2x4r. Member ChainIndexQueryEffect effs_a2x4r => TxOutRef -> Eff effs_a2x4r (Maybe DecoratedTxOut)
-unspentTxOutFromRef :: forall effs_a2x4q. Member ChainIndexQueryEffect effs_a2x4q => TxOutRef -> Eff effs_a2x4q (Maybe DecoratedTxOut)
-txFromTxId :: forall effs_a2x4s. Member ChainIndexQueryEffect effs_a2x4s => TxId -> Eff effs_a2x4s (Maybe ChainIndexTx)
-utxoSetMembership :: forall effs_a2x4t. Member ChainIndexQueryEffect effs_a2x4t => TxOutRef -> Eff effs_a2x4t IsUtxoResponse
-utxoSetAtAddress :: forall effs_a2x4u. Member ChainIndexQueryEffect effs_a2x4u => PageQuery TxOutRef -> Credential -> Eff effs_a2x4u UtxosResponse
-unspentTxOutSetAtAddress :: forall effs_a2x4v. Member ChainIndexQueryEffect effs_a2x4v => PageQuery TxOutRef -> Credential -> Eff effs_a2x4v (QueryResponse [(TxOutRef, DecoratedTxOut)])
-datumsAtAddress :: forall effs_a2x4w. Member ChainIndexQueryEffect effs_a2x4w => PageQuery TxOutRef -> Credential -> Eff effs_a2x4w (QueryResponse [Datum])
-utxoSetWithCurrency :: forall effs_a2x4x. Member ChainIndexQueryEffect effs_a2x4x => PageQuery TxOutRef -> AssetClass -> Eff effs_a2x4x UtxosResponse
-txoSetAtAddress :: forall effs_a2x4z. Member ChainIndexQueryEffect effs_a2x4z => PageQuery TxOutRef -> Credential -> Eff effs_a2x4z TxosResponse
-txsFromTxIds :: forall effs_a2x4y. Member ChainIndexQueryEffect effs_a2x4y => [TxId] -> Eff effs_a2x4y [ChainIndexTx]
-getTip :: forall effs_a2x4A. Member ChainIndexQueryEffect effs_a2x4A => Eff effs_a2x4A Tip
+datumFromHash :: forall effs_a2x4V. Member ChainIndexQueryEffect effs_a2x4V => DatumHash -> Eff effs_a2x4V (Maybe Datum)
+validatorFromHash :: forall effs_a2x4W. Member ChainIndexQueryEffect effs_a2x4W => ValidatorHash -> Eff effs_a2x4W (Maybe (Versioned Validator))
+mintingPolicyFromHash :: forall effs_a2x4X. Member ChainIndexQueryEffect effs_a2x4X => MintingPolicyHash -> Eff effs_a2x4X (Maybe (Versioned MintingPolicy))
+stakeValidatorFromHash :: forall effs_a2x4Z. Member ChainIndexQueryEffect effs_a2x4Z => StakeValidatorHash -> Eff effs_a2x4Z (Maybe (Versioned StakeValidator))
+redeemerFromHash :: forall effs_a2x4Y. Member ChainIndexQueryEffect effs_a2x4Y => RedeemerHash -> Eff effs_a2x4Y (Maybe Redeemer)
+txOutFromRef :: forall effs_a2x51. Member ChainIndexQueryEffect effs_a2x51 => TxOutRef -> Eff effs_a2x51 (Maybe DecoratedTxOut)
+unspentTxOutFromRef :: forall effs_a2x50. Member ChainIndexQueryEffect effs_a2x50 => TxOutRef -> Eff effs_a2x50 (Maybe DecoratedTxOut)
+txFromTxId :: forall effs_a2x52. Member ChainIndexQueryEffect effs_a2x52 => TxId -> Eff effs_a2x52 (Maybe ChainIndexTx)
+utxoSetMembership :: forall effs_a2x53. Member ChainIndexQueryEffect effs_a2x53 => TxOutRef -> Eff effs_a2x53 IsUtxoResponse
+utxoSetAtAddress :: forall effs_a2x54. Member ChainIndexQueryEffect effs_a2x54 => PageQuery TxOutRef -> Credential -> Eff effs_a2x54 UtxosResponse
+unspentTxOutSetAtAddress :: forall effs_a2x55. Member ChainIndexQueryEffect effs_a2x55 => PageQuery TxOutRef -> Credential -> Eff effs_a2x55 (QueryResponse [(TxOutRef, DecoratedTxOut)])
+datumsAtAddress :: forall effs_a2x56. Member ChainIndexQueryEffect effs_a2x56 => PageQuery TxOutRef -> Credential -> Eff effs_a2x56 (QueryResponse [Datum])
+utxoSetWithCurrency :: forall effs_a2x57. Member ChainIndexQueryEffect effs_a2x57 => PageQuery TxOutRef -> AssetClass -> Eff effs_a2x57 UtxosResponse
+txoSetAtAddress :: forall effs_a2x59. Member ChainIndexQueryEffect effs_a2x59 => PageQuery TxOutRef -> Credential -> Eff effs_a2x59 TxosResponse
+txsFromTxIds :: forall effs_a2x58. Member ChainIndexQueryEffect effs_a2x58 => [TxId] -> Eff effs_a2x58 [ChainIndexTx]
+getTip :: forall effs_a2x5a. Member ChainIndexQueryEffect effs_a2x5a => Eff effs_a2x5a Tip
 data ChainIndexControlEffect r
 
 -- | Add new blocks to the chain index.
@@ -1104,11 +1104,11 @@ data ChainIndexControlEffect r
 -- | Delete all data that is not covered by current UTxOs.
 [CollectGarbage] :: ChainIndexControlEffect ()
 [GetDiagnostics] :: ChainIndexControlEffect Diagnostics
-appendBlocks :: forall effs_a2xfw. Member ChainIndexControlEffect effs_a2xfw => [ChainSyncBlock] -> Eff effs_a2xfw ()
-rollback :: forall effs_a2xfx. Member ChainIndexControlEffect effs_a2xfx => Point -> Eff effs_a2xfx ()
-resumeSync :: forall effs_a2xfy. Member ChainIndexControlEffect effs_a2xfy => Point -> Eff effs_a2xfy ()
-collectGarbage :: forall effs_a2xfz. Member ChainIndexControlEffect effs_a2xfz => Eff effs_a2xfz ()
-getDiagnostics :: forall effs_a2xfA. Member ChainIndexControlEffect effs_a2xfA => Eff effs_a2xfA Diagnostics
+appendBlocks :: forall effs_a2xg6. Member ChainIndexControlEffect effs_a2xg6 => [ChainSyncBlock] -> Eff effs_a2xg6 ()
+rollback :: forall effs_a2xg7. Member ChainIndexControlEffect effs_a2xg7 => Point -> Eff effs_a2xg7 ()
+resumeSync :: forall effs_a2xg8. Member ChainIndexControlEffect effs_a2xg8 => Point -> Eff effs_a2xg8 ()
+collectGarbage :: forall effs_a2xg9. Member ChainIndexControlEffect effs_a2xg9 => Eff effs_a2xg9 ()
+getDiagnostics :: forall effs_a2xga. Member ChainIndexControlEffect effs_a2xga => Eff effs_a2xga Diagnostics
 
 module Plutus.ChainIndex.Client
 
@@ -1232,8 +1232,8 @@ UtxoState :: a -> Tip -> UtxoState a
 
 -- | Tip of our chain sync client
 [_usTip] :: UtxoState a -> Tip
-usTxUtxoData :: forall a_a2G2t a_a2Gem. Lens (UtxoState a_a2G2t) (UtxoState a_a2Gem) a_a2G2t a_a2Gem
-usTip :: forall a_a2G2t. Lens' (UtxoState a_a2G2t) Tip
+usTxUtxoData :: forall a_a2G33 a_a2GeW. Lens (UtxoState a_a2G33) (UtxoState a_a2GeW) a_a2G33 a_a2GeW
+usTip :: forall a_a2G33. Lens' (UtxoState a_a2G33) Tip
 type UtxoIndex a = FingerTree (BlockCount, UtxoState a) (UtxoState a)
 utxoState :: Monoid a => UtxoIndex a -> UtxoState a
 utxoBlockCount :: Monoid a => UtxoIndex a -> Int
@@ -1873,27 +1873,27 @@ data ChainIndexControlEffect r
 -- | Delete all data that is not covered by current UTxOs.
 [CollectGarbage] :: ChainIndexControlEffect ()
 [GetDiagnostics] :: ChainIndexControlEffect Diagnostics
-datumFromHash :: forall effs_a2x4l. Member ChainIndexQueryEffect effs_a2x4l => DatumHash -> Eff effs_a2x4l (Maybe Datum)
-validatorFromHash :: forall effs_a2x4m. Member ChainIndexQueryEffect effs_a2x4m => ValidatorHash -> Eff effs_a2x4m (Maybe (Versioned Validator))
-mintingPolicyFromHash :: forall effs_a2x4n. Member ChainIndexQueryEffect effs_a2x4n => MintingPolicyHash -> Eff effs_a2x4n (Maybe (Versioned MintingPolicy))
-redeemerFromHash :: forall effs_a2x4o. Member ChainIndexQueryEffect effs_a2x4o => RedeemerHash -> Eff effs_a2x4o (Maybe Redeemer)
-stakeValidatorFromHash :: forall effs_a2x4p. Member ChainIndexQueryEffect effs_a2x4p => StakeValidatorHash -> Eff effs_a2x4p (Maybe (Versioned StakeValidator))
-unspentTxOutFromRef :: forall effs_a2x4q. Member ChainIndexQueryEffect effs_a2x4q => TxOutRef -> Eff effs_a2x4q (Maybe DecoratedTxOut)
-txOutFromRef :: forall effs_a2x4r. Member ChainIndexQueryEffect effs_a2x4r => TxOutRef -> Eff effs_a2x4r (Maybe DecoratedTxOut)
-txFromTxId :: forall effs_a2x4s. Member ChainIndexQueryEffect effs_a2x4s => TxId -> Eff effs_a2x4s (Maybe ChainIndexTx)
-utxoSetMembership :: forall effs_a2x4t. Member ChainIndexQueryEffect effs_a2x4t => TxOutRef -> Eff effs_a2x4t IsUtxoResponse
-utxoSetAtAddress :: forall effs_a2x4u. Member ChainIndexQueryEffect effs_a2x4u => PageQuery TxOutRef -> Credential -> Eff effs_a2x4u UtxosResponse
-unspentTxOutSetAtAddress :: forall effs_a2x4v. Member ChainIndexQueryEffect effs_a2x4v => PageQuery TxOutRef -> Credential -> Eff effs_a2x4v (QueryResponse [(TxOutRef, DecoratedTxOut)])
-datumsAtAddress :: forall effs_a2x4w. Member ChainIndexQueryEffect effs_a2x4w => PageQuery TxOutRef -> Credential -> Eff effs_a2x4w (QueryResponse [Datum])
-utxoSetWithCurrency :: forall effs_a2x4x. Member ChainIndexQueryEffect effs_a2x4x => PageQuery TxOutRef -> AssetClass -> Eff effs_a2x4x UtxosResponse
-txsFromTxIds :: forall effs_a2x4y. Member ChainIndexQueryEffect effs_a2x4y => [TxId] -> Eff effs_a2x4y [ChainIndexTx]
-txoSetAtAddress :: forall effs_a2x4z. Member ChainIndexQueryEffect effs_a2x4z => PageQuery TxOutRef -> Credential -> Eff effs_a2x4z TxosResponse
-getTip :: forall effs_a2x4A. Member ChainIndexQueryEffect effs_a2x4A => Eff effs_a2x4A Tip
-appendBlocks :: forall effs_a2xfw. Member ChainIndexControlEffect effs_a2xfw => [ChainSyncBlock] -> Eff effs_a2xfw ()
-rollback :: forall effs_a2xfx. Member ChainIndexControlEffect effs_a2xfx => Point -> Eff effs_a2xfx ()
-resumeSync :: forall effs_a2xfy. Member ChainIndexControlEffect effs_a2xfy => Point -> Eff effs_a2xfy ()
-collectGarbage :: forall effs_a2xfz. Member ChainIndexControlEffect effs_a2xfz => Eff effs_a2xfz ()
-getDiagnostics :: forall effs_a2xfA. Member ChainIndexControlEffect effs_a2xfA => Eff effs_a2xfA Diagnostics
+datumFromHash :: forall effs_a2x4V. Member ChainIndexQueryEffect effs_a2x4V => DatumHash -> Eff effs_a2x4V (Maybe Datum)
+validatorFromHash :: forall effs_a2x4W. Member ChainIndexQueryEffect effs_a2x4W => ValidatorHash -> Eff effs_a2x4W (Maybe (Versioned Validator))
+mintingPolicyFromHash :: forall effs_a2x4X. Member ChainIndexQueryEffect effs_a2x4X => MintingPolicyHash -> Eff effs_a2x4X (Maybe (Versioned MintingPolicy))
+redeemerFromHash :: forall effs_a2x4Y. Member ChainIndexQueryEffect effs_a2x4Y => RedeemerHash -> Eff effs_a2x4Y (Maybe Redeemer)
+stakeValidatorFromHash :: forall effs_a2x4Z. Member ChainIndexQueryEffect effs_a2x4Z => StakeValidatorHash -> Eff effs_a2x4Z (Maybe (Versioned StakeValidator))
+unspentTxOutFromRef :: forall effs_a2x50. Member ChainIndexQueryEffect effs_a2x50 => TxOutRef -> Eff effs_a2x50 (Maybe DecoratedTxOut)
+txOutFromRef :: forall effs_a2x51. Member ChainIndexQueryEffect effs_a2x51 => TxOutRef -> Eff effs_a2x51 (Maybe DecoratedTxOut)
+txFromTxId :: forall effs_a2x52. Member ChainIndexQueryEffect effs_a2x52 => TxId -> Eff effs_a2x52 (Maybe ChainIndexTx)
+utxoSetMembership :: forall effs_a2x53. Member ChainIndexQueryEffect effs_a2x53 => TxOutRef -> Eff effs_a2x53 IsUtxoResponse
+utxoSetAtAddress :: forall effs_a2x54. Member ChainIndexQueryEffect effs_a2x54 => PageQuery TxOutRef -> Credential -> Eff effs_a2x54 UtxosResponse
+unspentTxOutSetAtAddress :: forall effs_a2x55. Member ChainIndexQueryEffect effs_a2x55 => PageQuery TxOutRef -> Credential -> Eff effs_a2x55 (QueryResponse [(TxOutRef, DecoratedTxOut)])
+datumsAtAddress :: forall effs_a2x56. Member ChainIndexQueryEffect effs_a2x56 => PageQuery TxOutRef -> Credential -> Eff effs_a2x56 (QueryResponse [Datum])
+utxoSetWithCurrency :: forall effs_a2x57. Member ChainIndexQueryEffect effs_a2x57 => PageQuery TxOutRef -> AssetClass -> Eff effs_a2x57 UtxosResponse
+txsFromTxIds :: forall effs_a2x58. Member ChainIndexQueryEffect effs_a2x58 => [TxId] -> Eff effs_a2x58 [ChainIndexTx]
+txoSetAtAddress :: forall effs_a2x59. Member ChainIndexQueryEffect effs_a2x59 => PageQuery TxOutRef -> Credential -> Eff effs_a2x59 TxosResponse
+getTip :: forall effs_a2x5a. Member ChainIndexQueryEffect effs_a2x5a => Eff effs_a2x5a Tip
+appendBlocks :: forall effs_a2xg6. Member ChainIndexControlEffect effs_a2xg6 => [ChainSyncBlock] -> Eff effs_a2xg6 ()
+rollback :: forall effs_a2xg7. Member ChainIndexControlEffect effs_a2xg7 => Point -> Eff effs_a2xg7 ()
+resumeSync :: forall effs_a2xg8. Member ChainIndexControlEffect effs_a2xg8 => Point -> Eff effs_a2xg8 ()
+collectGarbage :: forall effs_a2xg9. Member ChainIndexControlEffect effs_a2xg9 => Eff effs_a2xg9 ()
+getDiagnostics :: forall effs_a2xga. Member ChainIndexControlEffect effs_a2xga => Eff effs_a2xga Diagnostics
 
 -- | Outcome of inserting a <tt>UtxoState</tt> into the utxo index
 data InsertUtxoPosition
@@ -1941,8 +1941,8 @@ type UtxoIndex a = FingerTree (BlockCount, UtxoState a) (UtxoState a)
 newtype BlockCount
 BlockCount :: Int -> BlockCount
 [getBlockCount] :: BlockCount -> Int
-usTip :: forall a_a2G2t. Lens' (UtxoState a_a2G2t) Tip
-usTxUtxoData :: forall a_a2G2t a_a2Gem. Lens (UtxoState a_a2G2t) (UtxoState a_a2Gem) a_a2G2t a_a2Gem
+usTip :: forall a_a2G33. Lens' (UtxoState a_a2G33) Tip
+usTxUtxoData :: forall a_a2G33 a_a2GeW. Lens (UtxoState a_a2G33) (UtxoState a_a2GeW) a_a2G33 a_a2GeW
 utxoState :: Monoid a => UtxoIndex a -> UtxoState a
 utxoBlockCount :: Monoid a => UtxoIndex a -> Int
 tip :: UtxoState a -> Tip
@@ -2353,27 +2353,27 @@ data ChainIndexControlEffect r
 -- | Delete all data that is not covered by current UTxOs.
 [CollectGarbage] :: ChainIndexControlEffect ()
 [GetDiagnostics] :: ChainIndexControlEffect Diagnostics
-datumFromHash :: forall effs_a2x4l. Member ChainIndexQueryEffect effs_a2x4l => DatumHash -> Eff effs_a2x4l (Maybe Datum)
-validatorFromHash :: forall effs_a2x4m. Member ChainIndexQueryEffect effs_a2x4m => ValidatorHash -> Eff effs_a2x4m (Maybe (Versioned Validator))
-mintingPolicyFromHash :: forall effs_a2x4n. Member ChainIndexQueryEffect effs_a2x4n => MintingPolicyHash -> Eff effs_a2x4n (Maybe (Versioned MintingPolicy))
-redeemerFromHash :: forall effs_a2x4o. Member ChainIndexQueryEffect effs_a2x4o => RedeemerHash -> Eff effs_a2x4o (Maybe Redeemer)
-stakeValidatorFromHash :: forall effs_a2x4p. Member ChainIndexQueryEffect effs_a2x4p => StakeValidatorHash -> Eff effs_a2x4p (Maybe (Versioned StakeValidator))
-unspentTxOutFromRef :: forall effs_a2x4q. Member ChainIndexQueryEffect effs_a2x4q => TxOutRef -> Eff effs_a2x4q (Maybe DecoratedTxOut)
-txOutFromRef :: forall effs_a2x4r. Member ChainIndexQueryEffect effs_a2x4r => TxOutRef -> Eff effs_a2x4r (Maybe DecoratedTxOut)
-txFromTxId :: forall effs_a2x4s. Member ChainIndexQueryEffect effs_a2x4s => TxId -> Eff effs_a2x4s (Maybe ChainIndexTx)
-utxoSetMembership :: forall effs_a2x4t. Member ChainIndexQueryEffect effs_a2x4t => TxOutRef -> Eff effs_a2x4t IsUtxoResponse
-utxoSetAtAddress :: forall effs_a2x4u. Member ChainIndexQueryEffect effs_a2x4u => PageQuery TxOutRef -> Credential -> Eff effs_a2x4u UtxosResponse
-unspentTxOutSetAtAddress :: forall effs_a2x4v. Member ChainIndexQueryEffect effs_a2x4v => PageQuery TxOutRef -> Credential -> Eff effs_a2x4v (QueryResponse [(TxOutRef, DecoratedTxOut)])
-datumsAtAddress :: forall effs_a2x4w. Member ChainIndexQueryEffect effs_a2x4w => PageQuery TxOutRef -> Credential -> Eff effs_a2x4w (QueryResponse [Datum])
-utxoSetWithCurrency :: forall effs_a2x4x. Member ChainIndexQueryEffect effs_a2x4x => PageQuery TxOutRef -> AssetClass -> Eff effs_a2x4x UtxosResponse
-txsFromTxIds :: forall effs_a2x4y. Member ChainIndexQueryEffect effs_a2x4y => [TxId] -> Eff effs_a2x4y [ChainIndexTx]
-txoSetAtAddress :: forall effs_a2x4z. Member ChainIndexQueryEffect effs_a2x4z => PageQuery TxOutRef -> Credential -> Eff effs_a2x4z TxosResponse
-getTip :: forall effs_a2x4A. Member ChainIndexQueryEffect effs_a2x4A => Eff effs_a2x4A Tip
-appendBlocks :: forall effs_a2xfw. Member ChainIndexControlEffect effs_a2xfw => [ChainSyncBlock] -> Eff effs_a2xfw ()
-rollback :: forall effs_a2xfx. Member ChainIndexControlEffect effs_a2xfx => Point -> Eff effs_a2xfx ()
-resumeSync :: forall effs_a2xfy. Member ChainIndexControlEffect effs_a2xfy => Point -> Eff effs_a2xfy ()
-collectGarbage :: forall effs_a2xfz. Member ChainIndexControlEffect effs_a2xfz => Eff effs_a2xfz ()
-getDiagnostics :: forall effs_a2xfA. Member ChainIndexControlEffect effs_a2xfA => Eff effs_a2xfA Diagnostics
+datumFromHash :: forall effs_a2x4V. Member ChainIndexQueryEffect effs_a2x4V => DatumHash -> Eff effs_a2x4V (Maybe Datum)
+validatorFromHash :: forall effs_a2x4W. Member ChainIndexQueryEffect effs_a2x4W => ValidatorHash -> Eff effs_a2x4W (Maybe (Versioned Validator))
+mintingPolicyFromHash :: forall effs_a2x4X. Member ChainIndexQueryEffect effs_a2x4X => MintingPolicyHash -> Eff effs_a2x4X (Maybe (Versioned MintingPolicy))
+redeemerFromHash :: forall effs_a2x4Y. Member ChainIndexQueryEffect effs_a2x4Y => RedeemerHash -> Eff effs_a2x4Y (Maybe Redeemer)
+stakeValidatorFromHash :: forall effs_a2x4Z. Member ChainIndexQueryEffect effs_a2x4Z => StakeValidatorHash -> Eff effs_a2x4Z (Maybe (Versioned StakeValidator))
+unspentTxOutFromRef :: forall effs_a2x50. Member ChainIndexQueryEffect effs_a2x50 => TxOutRef -> Eff effs_a2x50 (Maybe DecoratedTxOut)
+txOutFromRef :: forall effs_a2x51. Member ChainIndexQueryEffect effs_a2x51 => TxOutRef -> Eff effs_a2x51 (Maybe DecoratedTxOut)
+txFromTxId :: forall effs_a2x52. Member ChainIndexQueryEffect effs_a2x52 => TxId -> Eff effs_a2x52 (Maybe ChainIndexTx)
+utxoSetMembership :: forall effs_a2x53. Member ChainIndexQueryEffect effs_a2x53 => TxOutRef -> Eff effs_a2x53 IsUtxoResponse
+utxoSetAtAddress :: forall effs_a2x54. Member ChainIndexQueryEffect effs_a2x54 => PageQuery TxOutRef -> Credential -> Eff effs_a2x54 UtxosResponse
+unspentTxOutSetAtAddress :: forall effs_a2x55. Member ChainIndexQueryEffect effs_a2x55 => PageQuery TxOutRef -> Credential -> Eff effs_a2x55 (QueryResponse [(TxOutRef, DecoratedTxOut)])
+datumsAtAddress :: forall effs_a2x56. Member ChainIndexQueryEffect effs_a2x56 => PageQuery TxOutRef -> Credential -> Eff effs_a2x56 (QueryResponse [Datum])
+utxoSetWithCurrency :: forall effs_a2x57. Member ChainIndexQueryEffect effs_a2x57 => PageQuery TxOutRef -> AssetClass -> Eff effs_a2x57 UtxosResponse
+txsFromTxIds :: forall effs_a2x58. Member ChainIndexQueryEffect effs_a2x58 => [TxId] -> Eff effs_a2x58 [ChainIndexTx]
+txoSetAtAddress :: forall effs_a2x59. Member ChainIndexQueryEffect effs_a2x59 => PageQuery TxOutRef -> Credential -> Eff effs_a2x59 TxosResponse
+getTip :: forall effs_a2x5a. Member ChainIndexQueryEffect effs_a2x5a => Eff effs_a2x5a Tip
+appendBlocks :: forall effs_a2xg6. Member ChainIndexControlEffect effs_a2xg6 => [ChainSyncBlock] -> Eff effs_a2xg6 ()
+rollback :: forall effs_a2xg7. Member ChainIndexControlEffect effs_a2xg7 => Point -> Eff effs_a2xg7 ()
+resumeSync :: forall effs_a2xg8. Member ChainIndexControlEffect effs_a2xg8 => Point -> Eff effs_a2xg8 ()
+collectGarbage :: forall effs_a2xg9. Member ChainIndexControlEffect effs_a2xg9 => Eff effs_a2xg9 ()
+getDiagnostics :: forall effs_a2xga. Member ChainIndexControlEffect effs_a2xga => Eff effs_a2xga Diagnostics
 
 -- | Outcome of inserting a <tt>UtxoState</tt> into the utxo index
 data InsertUtxoPosition

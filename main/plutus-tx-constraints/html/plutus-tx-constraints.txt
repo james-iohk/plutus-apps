@@ -167,6 +167,21 @@ ScriptInputConstraint :: a -> TxOutRef -> Maybe TxOutRef -> ScriptInputConstrain
 --   script transaction output with <tt>red</tt> is part of the
 --   transaction's inputs.
 mustSpendOutputFromTheScript :: TxOutRef -> i -> TxConstraints i o
+
+-- | <tt>mustSpendOutputFromTheReferencedScript txOutRef red ref </tt>
+--   spends the transaction output <tt>txOutRef</tt> with a script address
+--   using the redeemer <tt>red</tt>, using the reference script
+--   <tt>ref</tt> as a validator.
+--   
+--   If used in <a>OffChain</a>, this constraint spends a script output
+--   <tt>txOutRef</tt> with redeemer <tt>red</tt>. The script address is
+--   derived from the typed validator that is provided in the
+--   <a>ScriptLookups</a> with <a>typedValidatorLookups</a>.
+--   
+--   If used in <a>OnChain</a>, this constraint verifies that the spend
+--   script transaction output with <tt>red</tt> is part of the
+--   transaction's inputs.
+mustSpendOutputFromTheReferencedScript :: TxOutRef -> i -> TxOutRef -> TxConstraints i o
 data ScriptOutputConstraint a
 ScriptOutputConstraint :: TxOutDatum a -> Value -> Maybe ScriptHash -> ScriptOutputConstraint a
 
@@ -666,23 +681,31 @@ modifiesUtxoSet :: forall i o. TxConstraints i o -> Bool
 -- | A set of constraints for a transaction that collects PlutusV1 script
 --   outputs from the address of the given validator script, using the same
 --   redeemer script for all outputs.
-collectFromPlutusV1Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
-collectFromPlutusV1ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV1Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV1ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
 
 -- | Given the pay to script address of the <a>Validator</a>, collect from
 --   it all the outputs that match a predicate, using the
 --   <tt>RedeemerValue</tt>.
-collectFromTheScriptFilter :: forall i o. (TxOutRef -> DecoratedTxOut -> Bool) -> Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
+spendUtxosFromTheScriptFilter :: forall i o. (TxOutRef -> DecoratedTxOut -> Bool) -> Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
 
--- | A version of <tt>collectFromScript</tt> that selects all outputs at
+-- | A version of <tt>spendUtxosFromScript</tt> that selects all outputs at
 --   the address
-collectFromTheScript :: forall i o. Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
+spendUtxosFromTheScript :: forall i o. Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
+
+-- | A version of <tt>spendUtxosFromScript</tt> that selects all outputs at
+--   the address
+--   
+--   <tt>utxo</tt> the set of utxos we search into to find the one we want
+--   to spendsOutput <tt>ref</tt> the reference to the utxo that contains
+--   the reference script
+spendUtxosFromTheReferencedScript :: forall i o. Map TxOutRef DecoratedTxOut -> i -> TxOutRef -> TxConstraints i o
 
 -- | A set of constraints for a transaction that collects PlutusV2 script
 --   outputs from the address of the given validator script, using the same
 --   redeemer script for all outputs.
-collectFromPlutusV2Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
-collectFromPlutusV2ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV2Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV2ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
 instance Data.Aeson.Types.FromJSON.FromJSON datum => Data.Aeson.Types.FromJSON.FromJSON (Ledger.Tx.Constraints.TxConstraints.TxOutDatum datum)
 instance Data.Aeson.Types.ToJSON.ToJSON datum => Data.Aeson.Types.ToJSON.ToJSON (Ledger.Tx.Constraints.TxConstraints.TxOutDatum datum)
 instance GHC.Base.Functor Ledger.Tx.Constraints.TxConstraints.TxOutDatum
@@ -834,7 +857,7 @@ UnbalancedCardanoTx :: CardanoBuildTx -> Map TxOutRef TxOut -> UnbalancedTx
 tx :: Traversal' UnbalancedTx CardanoBuildTx
 txInsCollateral :: Lens' CardanoBuildTx [TxIn]
 txValidityRange :: Lens' CardanoBuildTx (TxValidityLowerBound BabbageEra, TxValidityUpperBound BabbageEra)
-txOuts :: Lens' CardanoBuildTx [TxOut CtxTx BabbageEra]
+txOuts :: Lens' CardanoBuildTx [TxOut]
 utxoIndex :: Lens' UnbalancedTx (Map TxOutRef TxOut)
 emptyUnbalancedTx :: Params -> UnbalancedTx
 
@@ -874,20 +897,20 @@ NoMatchingOutputFound :: ValidatorHash -> MkTxError
 MultipleMatchingOutputsFound :: ValidatorHash -> MkTxError
 AmbiguousRedeemer :: TxOutRef -> [Redeemer] -> MkTxError
 AmbiguousReferenceScript :: TxOutRef -> [TxOutRef] -> MkTxError
-_TypeCheckFailed :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ConnectionError
-_ToCardanoError :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ToCardanoError
-_TxOutRefNotFound :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu TxOutRef
-_TxOutRefWrongType :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu TxOutRef
-_TxOutRefNoReferenceScript :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu TxOutRef
-_DatumNotFound :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu DatumHash
-_DeclaredInputMismatch :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu Value
-_MintingPolicyNotFound :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu MintingPolicyHash
-_ScriptHashNotFound :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ScriptHash
-_TypedValidatorMissing :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ()
-_DatumWrongHash :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu (DatumHash, Datum)
-_CannotSatisfyAny :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ()
-_NoMatchingOutputFound :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ValidatorHash
-_MultipleMatchingOutputsFound :: AsMkTxError r_a1Bgu => Prism' r_a1Bgu ValidatorHash
+_TypeCheckFailed :: AsMkTxError r_a1Bla => Prism' r_a1Bla ConnectionError
+_ToCardanoError :: AsMkTxError r_a1Bla => Prism' r_a1Bla ToCardanoError
+_TxOutRefNotFound :: AsMkTxError r_a1Bla => Prism' r_a1Bla TxOutRef
+_TxOutRefWrongType :: AsMkTxError r_a1Bla => Prism' r_a1Bla TxOutRef
+_TxOutRefNoReferenceScript :: AsMkTxError r_a1Bla => Prism' r_a1Bla TxOutRef
+_DatumNotFound :: AsMkTxError r_a1Bla => Prism' r_a1Bla DatumHash
+_DeclaredInputMismatch :: AsMkTxError r_a1Bla => Prism' r_a1Bla Value
+_MintingPolicyNotFound :: AsMkTxError r_a1Bla => Prism' r_a1Bla MintingPolicyHash
+_ScriptHashNotFound :: AsMkTxError r_a1Bla => Prism' r_a1Bla ScriptHash
+_TypedValidatorMissing :: AsMkTxError r_a1Bla => Prism' r_a1Bla ()
+_DatumWrongHash :: AsMkTxError r_a1Bla => Prism' r_a1Bla (DatumHash, Datum)
+_CannotSatisfyAny :: AsMkTxError r_a1Bla => Prism' r_a1Bla ()
+_NoMatchingOutputFound :: AsMkTxError r_a1Bla => Prism' r_a1Bla ValidatorHash
+_MultipleMatchingOutputsFound :: AsMkTxError r_a1Bla => Prism' r_a1Bla ValidatorHash
 
 -- | The balances we track for computing the missing <a>Value</a> (if any)
 --   that needs to be added to the transaction. See note [Balance of value
@@ -1204,6 +1227,21 @@ mustSpendPubKeyOutput :: forall i o. TxOutRef -> TxConstraints i o
 --   transaction's inputs.
 mustSpendOutputFromTheScript :: TxOutRef -> i -> TxConstraints i o
 
+-- | <tt>mustSpendOutputFromTheReferencedScript txOutRef red ref </tt>
+--   spends the transaction output <tt>txOutRef</tt> with a script address
+--   using the redeemer <tt>red</tt>, using the reference script
+--   <tt>ref</tt> as a validator.
+--   
+--   If used in <a>OffChain</a>, this constraint spends a script output
+--   <tt>txOutRef</tt> with redeemer <tt>red</tt>. The script address is
+--   derived from the typed validator that is provided in the
+--   <a>ScriptLookups</a> with <a>typedValidatorLookups</a>.
+--   
+--   If used in <a>OnChain</a>, this constraint verifies that the spend
+--   script transaction output with <tt>red</tt> is part of the
+--   transaction's inputs.
+mustSpendOutputFromTheReferencedScript :: TxOutRef -> i -> TxOutRef -> TxConstraints i o
+
 -- | <tt>mustSpendScriptOutput utxo red</tt> must spend the given unspent
 --   transaction script output.
 --   
@@ -1462,23 +1500,31 @@ mustPayToOtherScriptAddressWithInlineDatum :: forall i o. ValidatorHash -> Staki
 -- | A set of constraints for a transaction that collects PlutusV1 script
 --   outputs from the address of the given validator script, using the same
 --   redeemer script for all outputs.
-collectFromPlutusV1Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
-collectFromPlutusV1ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV1Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV1ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
 
 -- | Given the pay to script address of the <a>Validator</a>, collect from
 --   it all the outputs that match a predicate, using the
 --   <tt>RedeemerValue</tt>.
-collectFromTheScriptFilter :: forall i o. (TxOutRef -> DecoratedTxOut -> Bool) -> Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
+spendUtxosFromTheScriptFilter :: forall i o. (TxOutRef -> DecoratedTxOut -> Bool) -> Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
 
--- | A version of <tt>collectFromScript</tt> that selects all outputs at
+-- | A version of <tt>spendUtxosFromScript</tt> that selects all outputs at
 --   the address
-collectFromTheScript :: forall i o. Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
+spendUtxosFromTheScript :: forall i o. Map TxOutRef DecoratedTxOut -> i -> TxConstraints i o
+
+-- | A version of <tt>spendUtxosFromScript</tt> that selects all outputs at
+--   the address
+--   
+--   <tt>utxo</tt> the set of utxos we search into to find the one we want
+--   to spendsOutput <tt>ref</tt> the reference to the utxo that contains
+--   the reference script
+spendUtxosFromTheReferencedScript :: forall i o. Map TxOutRef DecoratedTxOut -> i -> TxOutRef -> TxConstraints i o
 
 -- | A set of constraints for a transaction that collects PlutusV2 script
 --   outputs from the address of the given validator script, using the same
 --   redeemer script for all outputs.
-collectFromPlutusV2Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
-collectFromPlutusV2ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV2Script :: Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
+spendUtxosFromPlutusV2ScriptFilter :: (TxOutRef -> DecoratedTxOut -> Bool) -> Map Address (Map TxOutRef DecoratedTxOut) -> Validator -> Redeemer -> UntypedConstraints
 
 -- | Check whether every transaction that satisfies the constraints has to
 --   modify the UTXO set.

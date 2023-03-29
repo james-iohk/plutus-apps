@@ -39,15 +39,15 @@ defaultCertification :: Certification m
 module Plutus.Contract.Test.Certification.Run
 data CertificationReport m
 certResJSON :: CertificationReport m -> String
-certRes_standardPropertyResult :: forall m_aPOb m_a1qqE. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqE) Result Result
-certRes_noLockedFundsResult :: forall m_aPOb m_a1qqC. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqC) (Maybe Result) (Maybe Result)
-certRes_noLockedFundsLightResult :: forall m_aPOb m_a1qqB. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqB) (Maybe Result) (Maybe Result)
-certRes_standardCrashToleranceResult :: forall m_aPOb m_a1qqD. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqD) (Maybe Result) (Maybe Result)
-certRes_unitTestResults :: forall m_aPOb m_a1qqF. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqF) [Result] [Result]
-certRes_coverageReport :: forall m_aPOb m_a1qqA. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqA) CoverageReport CoverageReport
-certRes_whitelistOk :: forall m_aPOb m_a1qqG. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqG) (Maybe Bool) (Maybe Bool)
-certRes_whitelistResult :: forall m_aPOb m_a1qqH. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqH) (Maybe Result) (Maybe Result)
-certRes_DLTests :: forall m_aPOb m_a1qqz. Lens (CertificationReport m_aPOb) (CertificationReport m_a1qqz) [(String, Result)] [(String, Result)]
+certRes_standardPropertyResult :: forall m_aPOE m_a1qrg. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrg) Result Result
+certRes_noLockedFundsResult :: forall m_aPOE m_a1qre. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qre) (Maybe Result) (Maybe Result)
+certRes_noLockedFundsLightResult :: forall m_aPOE m_a1qrd. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrd) (Maybe Result) (Maybe Result)
+certRes_standardCrashToleranceResult :: forall m_aPOE m_a1qrf. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrf) (Maybe Result) (Maybe Result)
+certRes_unitTestResults :: forall m_aPOE m_a1qrh. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrh) [Result] [Result]
+certRes_coverageReport :: forall m_aPOE m_a1qrc. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrc) CoverageReport CoverageReport
+certRes_whitelistOk :: forall m_aPOE m_a1qri. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qri) (Maybe Bool) (Maybe Bool)
+certRes_whitelistResult :: forall m_aPOE m_a1qrj. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrj) (Maybe Result) (Maybe Result)
+certRes_DLTests :: forall m_aPOE m_a1qrb. Lens (CertificationReport m_aPOE) (CertificationReport m_a1qrb) [(String, Result)] [(String, Result)]
 data CertificationOptions
 CertificationOptions :: Int -> Bool -> Maybe (Chan CertificationEvent) -> CertificationOptions
 [certOptNumTests] :: CertificationOptions -> Int

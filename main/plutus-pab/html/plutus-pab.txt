@@ -223,7 +223,7 @@ module Control.Concurrent.STM.Extras
 module Control.Monad.Freer.Delay
 data DelayEffect r
 [DelayThread] :: TimeUnit a => a -> DelayEffect ()
-delayThread :: forall a_X1BRA. TimeUnit a_X1BRA => forall effs_a1BSw. Member DelayEffect effs_a1BSw => a_X1BRA -> Eff effs_a1BSw ()
+delayThread :: forall a_X1BSm. TimeUnit a_X1BSm => forall effs_a1BTi. Member DelayEffect effs_a1BTi => a_X1BSm -> Eff effs_a1BTi ()
 handleDelayEffect :: forall effs m. (LastMember m effs, MonadIO m) => Eff (DelayEffect : effs) ~> Eff effs
 
 
@@ -576,12 +576,12 @@ instance Database.Beam.Schema.Tables.Table Plutus.PAB.Db.Schema.ContractInstance
 module Plutus.PAB.Effects.TimeEffect
 data TimeEffect r
 [SystemTime] :: TimeEffect Slot
-systemTime :: forall effs_a2htk. Member TimeEffect effs_a2htk => Eff effs_a2htk Slot
+systemTime :: forall effs_a2hub. Member TimeEffect effs_a2hub => Eff effs_a2hub Slot
 
 module Plutus.PAB.Effects.UUID
 data UUIDEffect r
 [UuidNextRandom] :: UUIDEffect UUID
-uuidNextRandom :: forall effs_a2hwg. Member UUIDEffect effs_a2hwg => Eff effs_a2hwg UUID
+uuidNextRandom :: forall effs_a2hx7. Member UUIDEffect effs_a2hx7 => Eff effs_a2hx7 UUID
 handleUUIDEffect :: (LastMember m effs, MonadIO m) => Eff (UUIDEffect : effs) ~> Eff effs
 
 module Plutus.PAB.Events.Contract
@@ -1169,9 +1169,9 @@ data MultiWalletEffect r
 [CreateWallet] :: Maybe Ada -> MultiWalletEffect WalletInfo
 [MultiWallet] :: Wallet -> Eff '[WalletEffect] a -> MultiWalletEffect a
 [GetWalletInfo] :: WalletId -> MultiWalletEffect (Maybe WalletInfo)
-createWallet :: forall effs_a3fUV. Member MultiWalletEffect effs_a3fUV => Maybe Ada -> Eff effs_a3fUV WalletInfo
-multiWallet :: forall a_a3fMs. forall effs_a3fUW. Member MultiWalletEffect effs_a3fUW => Wallet -> Eff ('(:) WalletEffect ('[] :: [Type -> Type])) a_a3fMs -> Eff effs_a3fUW a_a3fMs
-getWalletInfo :: forall effs_a3fUX. Member MultiWalletEffect effs_a3fUX => WalletId -> Eff effs_a3fUX (Maybe WalletInfo)
+createWallet :: forall effs_a3fVJ. Member MultiWalletEffect effs_a3fVJ => Maybe Ada -> Eff effs_a3fVJ WalletInfo
+multiWallet :: forall a_a3fNg. forall effs_a3fVK. Member MultiWalletEffect effs_a3fVK => Wallet -> Eff ('(:) WalletEffect ('[] :: [Type -> Type])) a_a3fNg -> Eff effs_a3fVK a_a3fNg
+getWalletInfo :: forall effs_a3fVL. Member MultiWalletEffect effs_a3fVL => WalletId -> Eff effs_a3fVL (Maybe WalletInfo)
 data WalletMsg
 StartingWallet :: Port -> WalletMsg
 ChainClientMsg :: Text -> WalletMsg
@@ -1475,10 +1475,10 @@ UpdateContractInstanceState :: !ContractActivationArgs t -> !ContractInstanceId 
 SubmitTx :: !CardanoTx -> PABEvent t
 ActivateContract :: !ContractActivationArgs t -> !ContractInstanceId -> PABEvent t
 StopContract :: !ContractInstanceId -> PABEvent t
-_UpdateContractInstanceState :: forall t_a3NI9. Prism' (PABEvent t_a3NI9) (ContractActivationArgs t_a3NI9, ContractInstanceId, ContractResponse Value Value PABResp PABReq)
-_SubmitTx :: forall t_a3NI9. Prism' (PABEvent t_a3NI9) CardanoTx
-_ActivateContract :: forall t_a3NI9. Prism' (PABEvent t_a3NI9) (ContractActivationArgs t_a3NI9, ContractInstanceId)
-_StopContract :: forall t_a3NI9. Prism' (PABEvent t_a3NI9) ContractInstanceId
+_UpdateContractInstanceState :: forall t_a3NIX. Prism' (PABEvent t_a3NIX) (ContractActivationArgs t_a3NIX, ContractInstanceId, ContractResponse Value Value PABResp PABReq)
+_SubmitTx :: forall t_a3NIX. Prism' (PABEvent t_a3NIX) CardanoTx
+_ActivateContract :: forall t_a3NIX. Prism' (PABEvent t_a3NIX) (ContractActivationArgs t_a3NIX, ContractInstanceId)
+_StopContract :: forall t_a3NIX. Prism' (PABEvent t_a3NIX) ContractInstanceId
 instance Prettyprinter.Internal.Pretty t => Prettyprinter.Internal.Pretty (Plutus.PAB.Events.PABEvent t)
 instance Data.Aeson.Types.FromJSON.FromJSON t => Data.Aeson.Types.FromJSON.FromJSON (Plutus.PAB.Events.PABEvent t)
 instance Data.Aeson.Types.ToJSON.ToJSON t => Data.Aeson.Types.ToJSON.ToJSON (Plutus.PAB.Events.PABEvent t)
